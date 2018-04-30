@@ -152,29 +152,24 @@ __kernel void search1(__global hash_t* hashes)
   __global hash_t *hash = &(hashes[gid-get_global_offset(0)]);
 
   // blake
-  sph_u64 H0 = SPH_C64(0x6A09E667F3BCC908), H1 = SPH_C64(0xBB67AE8584CAA73B);
-  sph_u64 H2 = SPH_C64(0x3C6EF372FE94F82B), H3 = SPH_C64(0xA54FF53A5F1D36F1);
-  sph_u64 H4 = SPH_C64(0x510E527FADE682D1), H5 = SPH_C64(0x9B05688C2B3E6C1F);
-  sph_u64 H6 = SPH_C64(0x1F83D9ABFB41BD6B), H7 = SPH_C64(0x5BE0CD19137E2179);
-  sph_u64 S0 = 0, S1 = 0, S2 = 0, S3 = 0;
-  sph_u64 T0 = SPH_C64(0xFFFFFFFFFFFFFC00) + (64 << 3), T1 = 0xFFFFFFFFFFFFFFFF;
 
-  if ((T0 = SPH_T64(T0 + 1024)) < 1024)
-    T1 = SPH_T64(T1 + 1);
+  sph_u64 V0 = BLAKE_IV512[0], V1 = BLAKE_IV512[1], V2 = BLAKE_IV512[2], V3 = BLAKE_IV512[3];
+  sph_u64 V4 = BLAKE_IV512[4], V5 = BLAKE_IV512[5], V6 = BLAKE_IV512[6], V7 = BLAKE_IV512[7];
+
+  sph_u64 V8 = CB0, V9 = CB1, VA = CB2, VB = CB3;
+  sph_u64 VC = 0x452821E638D01177UL, VD = 0xBE5466CF34E90E6CUL, VE = CB6, VF = CB7;
 
   sph_u64 M0, M1, M2, M3, M4, M5, M6, M7;
   sph_u64 M8, M9, MA, MB, MC, MD, ME, MF;
-  sph_u64 V0, V1, V2, V3, V4, V5, V6, V7;
-  sph_u64 V8, V9, VA, VB, VC, VD, VE, VF;
 
-  M0 = DEC64E(hash->h8[0]);
-  M1 = DEC64E(hash->h8[1]);
-  M2 = DEC64E(hash->h8[2]);
-  M3 = DEC64E(hash->h8[3]);
-  M4 = DEC64E(hash->h8[4]);
-  M5 = DEC64E(hash->h8[5]);
-  M6 = DEC64E(hash->h8[6]);
-  M7 = DEC64E(hash->h8[7]);
+  M0 = SWAP8(hash->h8[0]);
+  M1 = SWAP8(hash->h8[1]);
+  M2 = SWAP8(hash->h8[2]);
+  M3 = SWAP8(hash->h8[3]);
+  M4 = SWAP8(hash->h8[4]);
+  M5 = SWAP8(hash->h8[5]);
+  M6 = SWAP8(hash->h8[6]);
+  M7 = SWAP8(hash->h8[7]);
   M8 = 0x8000000000000000;
   M9 = 0;
   MA = 0;
@@ -184,16 +179,32 @@ __kernel void search1(__global hash_t* hashes)
   ME = 0;
   MF = 0x200;
 
-  COMPRESS64;
+  bool flag = false;
+  rnds:
+  ROUND_B(0);
+  ROUND_B(1);
+  ROUND_B(2);
+  ROUND_B(3);
+  ROUND_B(4);
+  ROUND_B(5);
+  if(flag) goto end;
+  ROUND_B(6);
+  ROUND_B(7);
+  ROUND_B(8);
+  ROUND_B(9);
+  flag = true;
+  goto rnds;
 
-  hash->h8[0] = ENC64E(H0);
-  hash->h8[1] = ENC64E(H1);
-  hash->h8[2] = ENC64E(H2);
-  hash->h8[3] = ENC64E(H3);
-  hash->h8[4] = ENC64E(H4);
-  hash->h8[5] = ENC64E(H5);
-  hash->h8[6] = ENC64E(H6);
-  hash->h8[7] = ENC64E(H7);
+  end:
+
+  hash->h8[0] = SWAP8(V0 ^ V8 ^ BLAKE_IV512[0]);
+  hash->h8[1] = SWAP8(V1 ^ V9 ^ BLAKE_IV512[1]);
+  hash->h8[2] = SWAP8(V2 ^ VA ^ BLAKE_IV512[2]);
+  hash->h8[3] = SWAP8(V3 ^ VB ^ BLAKE_IV512[3]);
+  hash->h8[4] = SWAP8(V4 ^ VC ^ BLAKE_IV512[4]);
+  hash->h8[5] = SWAP8(V5 ^ VD ^ BLAKE_IV512[5]);
+  hash->h8[6] = SWAP8(V6 ^ VE ^ BLAKE_IV512[6]);
+  hash->h8[7] = SWAP8(V7 ^ VF ^ BLAKE_IV512[7]);
 
   barrier(CLK_GLOBAL_MEM_FENCE);
 }
@@ -206,20 +217,14 @@ __kernel void search2(__global unsigned char* block, __global hash_t* hashes)
     __global hash_t *hash = &(hashes[gid-get_global_offset(0)]);
 
   // blake
-  sph_u64 H0 = SPH_C64(0x6A09E667F3BCC908), H1 = SPH_C64(0xBB67AE8584CAA73B);
-  sph_u64 H2 = SPH_C64(0x3C6EF372FE94F82B), H3 = SPH_C64(0xA54FF53A5F1D36F1);
-  sph_u64 H4 = SPH_C64(0x510E527FADE682D1), H5 = SPH_C64(0x9B05688C2B3E6C1F);
-  sph_u64 H6 = SPH_C64(0x1F83D9ABFB41BD6B), H7 = SPH_C64(0x5BE0CD19137E2179);
-  sph_u64 S0 = 0, S1 = 0, S2 = 0, S3 = 0;
-  sph_u64 T0 = SPH_C64(0xFFFFFFFFFFFFFC00) + (80 << 3), T1 = 0xFFFFFFFFFFFFFFFF;
 
-  if ((T0 = SPH_T64(T0 + 1024)) < 1024)
-    T1 = SPH_T64(T1 + 1);
+  sph_u64 V0 = BLAKE_IV512[0], V1 = BLAKE_IV512[1], V2 = BLAKE_IV512[2], V3 = BLAKE_IV512[3];
+  sph_u64 V4 = BLAKE_IV512[4], V5 = BLAKE_IV512[5], V6 = BLAKE_IV512[6], V7 = BLAKE_IV512[7];
+  sph_u64 V8 = CB0, V9 = CB1, VA = CB2, VB = CB3;
+  sph_u64 VC = 0x452821E638D011F7UL, VD = 0xBE5466CF34E90EECUL, VE = CB6, VF = CB7;
 
   sph_u64 M0, M1, M2, M3, M4, M5, M6, M7;
   sph_u64 M8, M9, MA, MB, MC, MD, ME, MF;
-  sph_u64 V0, V1, V2, V3, V4, V5, V6, V7;
-  sph_u64 V8, V9, VA, VB, VC, VD, VE, VF;
 
   M0 = DEC64BE(block + 0);
   M1 = DEC64BE(block + 8);
@@ -240,16 +245,32 @@ __kernel void search2(__global unsigned char* block, __global hash_t* hashes)
   ME = 0;
   MF = 0x280;
 
-  COMPRESS64;
+  bool flag = false;
+	rnds:
+	ROUND_B(0);
+	ROUND_B(1);
+	ROUND_B(2);
+	ROUND_B(3);
+	ROUND_B(4);
+	ROUND_B(5);
+	if(flag) goto end;
+	ROUND_B(6);
+	ROUND_B(7);
+	ROUND_B(8);
+	ROUND_B(9);
+	flag = true;
+	goto rnds;
 
-  hash->h8[0] = ENC64E(H0);
-  hash->h8[1] = ENC64E(H1);
-  hash->h8[2] = ENC64E(H2);
-  hash->h8[3] = ENC64E(H3);
-  hash->h8[4] = ENC64E(H4);
-  hash->h8[5] = ENC64E(H5);
-  hash->h8[6] = ENC64E(H6);
-  hash->h8[7] = ENC64E(H7);
+	end:
+
+  hash->h8[0] = SWAP8(V0 ^ V8 ^ BLAKE_IV512[0]);
+  hash->h8[1] = SWAP8(V1 ^ V9 ^ BLAKE_IV512[1]);
+  hash->h8[2] = SWAP8(V2 ^ VA ^ BLAKE_IV512[2]);
+  hash->h8[3] = SWAP8(V3 ^ VB ^ BLAKE_IV512[3]);
+  hash->h8[4] = SWAP8(V4 ^ VC ^ BLAKE_IV512[4]);
+  hash->h8[5] = SWAP8(V5 ^ VD ^ BLAKE_IV512[5]);
+  hash->h8[6] = SWAP8(V6 ^ VE ^ BLAKE_IV512[6]);
+  hash->h8[7] = SWAP8(V7 ^ VF ^ BLAKE_IV512[7]);
 
   barrier(CLK_GLOBAL_MEM_FENCE);
 }
