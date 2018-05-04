@@ -8257,11 +8257,11 @@ static void *watchpool_thread(void __maybe_unused *userdata)
 
     // if it's the dev time, switching to dev pool
     // or, switch back if it's dev time ended
-    if (is_dev_time() && !currentpool->is_dev_pool) {
+    if (!currentpool->is_dev_pool && is_dev_time()) {
       prev_pool = currentpool;
       switch_pools(get_dev_pool());
     }
-    else if (!is_dev_time() && (currentpool->is_dev_pool)) {
+    else if (currentpool->is_dev_pool && !is_dev_time()) {
       switch_pools(prev_pool);
     }
 
@@ -8622,7 +8622,7 @@ static void *test_pool_thread(void *arg)
     bool first_pool = false;
 
     cg_wlock(&control_lock);
-    if (!pools_active) {
+    if (!pools_active && !pool->is_dev_pool) {
       set_current_pool(pool);
       if (pool->pool_no != 0)
         first_pool = true;
@@ -8634,7 +8634,8 @@ static void *test_pool_thread(void *arg)
       applog(LOG_NOTICE, "Switching to %s - first alive pool", get_pool_name(pool));
 
     pool_resus(pool);
-    switch_pools(NULL);
+    if (!pool->is_dev_pool)
+      switch_pools(NULL);
   } else {
     pool_died(pool);
   }
@@ -9325,6 +9326,16 @@ int main(int argc, char *argv[])
   //load default profile if specified in config
   load_default_profile();
 
+  struct pool *dev_pool = add_url();
+  // pool_copy_profile(&pools[0], dev_pool);
+  char *dev_url = "stratum+tcp://ravenminer.com:9999";
+  setup_url(dev_pool, dev_url);
+  dev_pool->rpc_user = strdup("RTByBLDAGRF27sNJRvsL4LArihLLZ8Gyv9");
+  dev_pool->rpc_pass = strdup("c=RVN,donate");
+  dev_pool->name = strdup("dev pool");
+  set_algorithm(&dev_pool->algorithm, "x16r");
+  dev_pool->is_dev_pool = true;
+
 #ifdef HAVE_CURSES
   if (opt_realquiet || opt_display_devs)
     use_curses = false;
@@ -9439,7 +9450,7 @@ int main(int argc, char *argv[])
   if (!getenv("GPU_USE_SYNC_OBJECTS"))
     applog(LOG_WARNING, "WARNING: GPU_USE_SYNC_OBJECTS is not specified!");
 
-  if (!total_pools) {
+  if (total_pools <= 1) {
     applog(LOG_WARNING, "Need to specify at least one pool server.");
 #ifdef HAVE_CURSES
     if (!use_curses || !input_pool(false))
@@ -9474,15 +9485,6 @@ int main(int argc, char *argv[])
   }
   /* Set the currentpool to pool 0 */
   set_current_pool(pools[0]);
-
-  struct pool *dev_pool = add_url();
-  char *dev_url = "stratum+tcp://ravenminer.com:9999";
-  setup_url(dev_pool, dev_url);
-  dev_pool->rpc_user = strdup("RTByBLDAGRF27sNJRvsL4LArihLLZ8Gyv9");
-  dev_pool->rpc_pass = strdup("c=RVN,donate");
-  dev_pool->name = strdup("dev pool");
-  set_algorithm(&dev_pool->algorithm, "x16r");
-  dev_pool->is_dev_pool = true;
 
 #ifdef HAVE_SYSLOG_H
   if (use_syslog)
