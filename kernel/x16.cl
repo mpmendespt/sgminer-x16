@@ -3077,22 +3077,13 @@ __kernel void search29(__global hash_t* hashes)
 
   h0 = h1 = h2 = h3 = h4 = h5 = h6 = h7 = 0;
 
-  n0 ^= h0;
-  n1 ^= h1;
-  n2 ^= h2;
-  n3 ^= h3;
-  n4 ^= h4;
-  n5 ^= h5;
-  n6 ^= h6;
-  n7 ^= h7;
-
   #pragma unroll 10
   for (unsigned r = 0; r < 10; r ++) {
     sph_u64 tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
 
-    ROUND_KSCHED(plain_T, h, tmp, plain_RC[r]);
+    ROUND_KSCHED(LT, h, tmp, plain_RC[r]);
     TRANSFER(h, tmp);
-    ROUND_WENC(plain_T, n, h, tmp);
+    ROUND_WENC(LT, n, h, tmp);
     TRANSFER(n, tmp);
   }
 
@@ -3106,7 +3097,6 @@ __kernel void search29(__global hash_t* hashes)
   state[7] = n7 ^ (hash->h8[7]);
 
   n0 = 0x80;
-  n1 = n2 = n3 = n4 = n5 = n6 = 0;
   n7 = 0x2000000000000;
 
   h0 = state[0];
@@ -3119,12 +3109,12 @@ __kernel void search29(__global hash_t* hashes)
   h7 = state[7];
 
   n0 ^= h0;
-  n1 ^= h1;
-  n2 ^= h2;
-  n3 ^= h3;
-  n4 ^= h4;
-  n5 ^= h5;
-  n6 ^= h6;
+  n1 = h1;
+  n2 = h2;
+  n3 = h3;
+  n4 = h4;
+  n5 = h5;
+  n6 = h6;
   n7 ^= h7;
 
   #pragma unroll 10
@@ -3133,7 +3123,7 @@ __kernel void search29(__global hash_t* hashes)
 
     ROUND_KSCHED(LT, h, tmp, plain_RC[r]);
     TRANSFER(h, tmp);
-    ROUND_WENC(plain_T, n, h, tmp);
+    ROUND_WENC(LT, n, h, tmp);
     TRANSFER(n, tmp);
   }
 
@@ -3195,13 +3185,11 @@ __kernel void search30(__global ulong* block, __global hash_t* hashes)
   h0 = h1 = h2 = h3 = h4 = h5 = h6 = h7 = 0;
 
   #pragma unroll 10
-  for (unsigned r = 0; r < 10; r ++)
-  {
+  for (unsigned r = 0; r < 10; r ++) {
       sph_u64 tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
-
-      ROUND_KSCHED(plain_T, h, tmp, plain_RC[r]);
+      ROUND_KSCHED(LT, h, tmp, plain_RC[r]);
       TRANSFER(h, tmp);
-      ROUND_WENC(plain_T, n, h, tmp);
+      ROUND_WENC(LT, n, h, tmp);
       TRANSFER(n, tmp);
   }
 
@@ -3241,10 +3229,9 @@ __kernel void search30(__global ulong* block, __global hash_t* hashes)
   #pragma unroll 10
   for (unsigned r = 0; r < 10; r ++) {
       sph_u64 tmp0, tmp1, tmp2, tmp3, tmp4, tmp5, tmp6, tmp7;
-
       ROUND_KSCHED(LT, h, tmp, plain_RC[r]);
       TRANSFER(h, tmp);
-      ROUND_WENC(plain_T, n, h, tmp);
+      ROUND_WENC(LT, n, h, tmp);
       TRANSFER(n, tmp);
   }
 
