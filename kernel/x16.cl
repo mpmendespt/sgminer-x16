@@ -104,7 +104,6 @@ ulong FAST_ROTL64_HI(const uint2 x, const uint y) { return(as_ulong(amd_bitalign
 #include "cubehash.cl"
 #include "shavite.cl"
 #include "simd.cl"
-#include "echo.cl"
 #include "wolf-echo.cl"
 #include "hamsi.cl"
 #include "fugue.cl"
@@ -1942,8 +1941,8 @@ __kernel void search21(__global hash_t* hashes)
   barrier(CLK_LOCAL_MEM_FENCE);
 
   #pragma unroll 1
-  for(uchar i = 0; i < 10; ++i) {
-      BigSubBytesSmall(AES0, W, i);
+  for(uint k0 = 0; k0 < 160; k0 += 16) {
+      BigSubBytesSmall(AES0, W, k0);
       BigShiftRows(W);
       BigMixColumns(W);
   }
@@ -1960,76 +1959,37 @@ __attribute__((reqd_work_group_size(WORKSIZE, 1, 1)))
 __kernel void search22(__global ulong* block, __global hash_t* hashes)
 {
   uint gid = get_global_id(0);
-  __global hash_t *hash = &(hashes[gid-get_global_offset(0)]);
-  __local sph_u32 AES0[256], AES1[256], AES2[256], AES3[256];
+  uint offset = get_global_offset(0);
+  __global hash_t *hash = &(hashes[gid-offset]);
 
-  int init = get_local_id(0);
-  int step = get_local_size(0);
-
-  for (int i = init; i < 256; i += step) {
+  __local uint AES0[256];
+  for(int i = get_local_id(0), step = get_local_size(0); i < 256; i += step)
     AES0[i] = AES0_C[i];
-    AES1[i] = AES1_C[i];
-    AES2[i] = AES2_C[i];
-    AES3[i] = AES3_C[i];
-  }
+
+  uint4 W[16];
+
+  #pragma unroll
+  for(int i = 0; i < 8; ++i) W[i] = (uint4)(512, 0, 0, 0);
+
+  ((uint16 *)W)[2] = vload16(0, (__global uint *)block);
+
+  W[12] = (uint4)(as_uint2(block[8]).s0, as_uint2(block[8]).s1, as_uint2(block[9]).s0, gid);
+  W[13] = (uint4)(0x80, 0, 0, 0);
+  W[14] = (uint4)(0, 0, 0, 0x2000000);
+  W[15] = (uint4)(0x280, 0, 0, 0);
 
   barrier(CLK_LOCAL_MEM_FENCE);
 
-  // echo
-  sph_u64 W00, W01, W10, W11, W20, W21, W30, W31, W40, W41, W50, W51, W60, W61, W70, W71, W80, W81, W90, W91, WA0, WA1, WB0, WB1, WC0, WC1, WD0, WD1, WE0, WE1, WF0, WF1;
-  sph_u64 Vb00, Vb01, Vb10, Vb11, Vb20, Vb21, Vb30, Vb31, Vb40, Vb41, Vb50, Vb51, Vb60, Vb61, Vb70, Vb71;
-  Vb00 = Vb10 = Vb20 = Vb30 = Vb40 = Vb50 = Vb60 = Vb70 = 512UL;
-  Vb01 = Vb11 = Vb21 = Vb31 = Vb41 = Vb51 = Vb61 = Vb71 = 0;
+  #pragma unroll 1
+  for(uint k0 = 0; k0 < 160; k0 += 16) {
+      BigSubBytesSmall80(AES0, W, k0);
+      BigShiftRows(W);
+      BigMixColumns(W);
+  }
 
-  sph_u32 K0 = 80 * 8;
-  sph_u32 K1 = 0;
-  sph_u32 K2 = 0;
-  sph_u32 K3 = 0;
-
-  W00 = Vb00;
-  W01 = Vb01;
-  W10 = Vb10;
-  W11 = Vb11;
-  W20 = Vb20;
-  W21 = Vb21;
-  W30 = Vb30;
-  W31 = Vb31;
-  W40 = Vb40;
-  W41 = Vb41;
-  W50 = Vb50;
-  W51 = Vb51;
-  W60 = Vb60;
-  W61 = Vb61;
-  W70 = Vb70;
-  W71 = Vb71;
-  W80 = block[0];
-  W81 = block[1];
-  W90 = block[2];
-  W91 = block[3];
-  WA0 = block[4];
-  WA1 = block[5];
-  WB0 = block[6];
-  WB1 = block[7];
-  WC0 = block[8];
-  WC1 = (block[9] & 0xffffffff) ^ ((ulong)gid << 32);
-  WD0 = 0x80;
-  WD1 = 0;
-  WE0 = 0;
-  WE1 = 0x200000000000000UL;
-  WF0 = 0x280;
-  WF1 = 0;
-
-  for (unsigned u = 0; u < 10; u ++)
-    BIG_ROUND;
-
-  hash->h8[0] = block[0] ^ Vb00 ^ W00 ^ W80;
-  hash->h8[1] = block[1] ^ Vb01 ^ W01 ^ W81;
-  hash->h8[2] = block[2] ^ Vb10 ^ W10 ^ W90;
-  hash->h8[3] = block[3] ^ Vb11 ^ W11 ^ W91;
-  hash->h8[4] = block[4] ^ Vb20 ^ W20 ^ WA0;
-  hash->h8[5] = block[5] ^ Vb21 ^ W21 ^ WA1;
-  hash->h8[6] = block[6] ^ Vb30 ^ W30 ^ WB0;
-  hash->h8[7] = block[7] ^ Vb31 ^ W31 ^ WB1;
+  #pragma unroll
+  for(int i = 0; i < 4; ++i)
+    vstore4(vload4(i, (__global uint *)block) ^ W[i] ^ W[i + 8] ^ (uint4)(512, 0, 0, 0), i, hash->h4);
 
   barrier(CLK_GLOBAL_MEM_FENCE);
 }
