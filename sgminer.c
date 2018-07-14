@@ -53,7 +53,6 @@ char *curly = ":D";
 
 #include "compat.h"
 #include "miner.h"
-#include "donate.h"
 #include "findnonce.h"
 #include "adl.h"
 #include "sysfs-gpu-controls.h"
@@ -274,10 +273,6 @@ unsigned int total_go, total_ro;
 
 struct pool **pools;
 struct pool *currentpool = NULL;
-struct pool *prev_pool = NULL;
-double dev_donate_percent = MIN_DEV_DONATE_PERCENT;
-time_t dev_timestamp;
-time_t dev_timestamp_offset;
 
 struct strategies strategies[] = {
   { "Failover" },
@@ -672,15 +667,6 @@ struct pool *current_pool(void)
   return pool;
 }
 
-// Get dev pool ID
-static struct pool *get_dev_pool(void)
-{
-  for (int i = 0; i < total_pools; i++) {
-    if (pools[i]->is_dev_pool) return pools[i];
-  }
-  return NULL;
-}
-
 /* Pool variant of test and set */
 static bool pool_tset(struct pool *pool, bool *var)
 {
@@ -821,21 +807,6 @@ static char *set_rotate(const char *arg, int *i)
 static char *set_rr(enum pool_strategy *strategy)
 {
   *strategy = POOL_ROUNDROBIN;
-  return NULL;
-}
-
-char *set_donate_percent(const char *arg)
-{
-  float d = atof(arg);
-  if (d < 0.)
-    return NULL;
-  if (d < MIN_DEV_DONATE_PERCENT)
-    printf("Minimum dev donation is %.1f%%.\n",
-      (double)MIN_DEV_DONATE_PERCENT);
-  else if (d >= 100)
-    dev_donate_percent = 100;
-  else
-    dev_donate_percent = d;
   return NULL;
 }
 
@@ -1065,7 +1036,6 @@ static void enable_pool(struct pool *pool)
 
 static void disable_pool(struct pool *pool)
 {
-  if (pool->is_dev_pool) return;
   if (pool->state == POOL_ENABLED)
     enabled_pools--;
   pool->state = POOL_DISABLED;
@@ -1082,7 +1052,6 @@ static void reject_pool(struct pool *pool)
  * still be work referencing it. We just remove it from the pools list */
 void remove_pool(struct pool *pool)
 {
-  if (pool->is_dev_pool) return;
   int i, last_pool = total_pools - 1;
   struct pool *other;
 
@@ -1523,9 +1492,6 @@ struct opt_table opt_config_table[] = {
   OPT_WITH_ARG("--device|-d",
       set_default_devices, NULL, NULL,
       "Select device to use, one value, range and/or comma separated (e.g. 0-2,4) default: all"),
-  OPT_WITH_ARG("--donate",
-      set_donate_percent, NULL, NULL,
-      "percentage of time to donate to devs"),
   OPT_WITHOUT_ARG("--disable-rejecting",
       opt_set_bool, &opt_disable_pool,
       "Automatically disable pools that continually reject shares"),
@@ -2138,7 +2104,7 @@ static bool __build_gbt_txns(struct pool *pool, json_t *res_val)
     applog(LOG_DEBUG, "gbt_txns: %s", pool->coinbasetxn);
     goto out;
   }
-
+  
   if (!pool->gbt_txns)
     goto out;
 
@@ -8170,16 +8136,6 @@ static void reap_curl(struct pool *pool)
     applog(LOG_DEBUG, "Reaped %d curl%s from %s", reaped, reaped > 1 ? "s" : "", get_pool_name(pool));
 }
 
-static bool is_dev_time() {
-	// Add 2 seconds to compensate for connection time
-	double dev_portion = (double)DONATE_CYCLE_TIME
-											* dev_donate_percent * 0.01 + 2;
-	if(dev_portion < 12) // No point in bothering with less than 10s
-		return false;
-	return (time(NULL) - dev_timestamp + dev_timestamp_offset) % DONATE_CYCLE_TIME
-					>= (DONATE_CYCLE_TIME - dev_portion);
-}
-
 static void *watchpool_thread(void __maybe_unused *userdata)
 {
   int intervals = 0;
@@ -8245,7 +8201,7 @@ static void *watchpool_thread(void __maybe_unused *userdata)
       }
 
       // if this pool is alive and the priority is greater (lower) than currently connected pool
-      if (!pool->idle && pool->prio < cp_prio() && !pool->is_dev_pool) {
+      if (!pool->idle && pool->prio < cp_prio()) {
         // failover strategy - switch when failover delay is met
         if (pool_strategy == POOL_FAILOVER && (now.tv_sec - pool->tv_idle.tv_sec > opt_fail_switch_delay)) {
           applog(LOG_WARNING, "%s stable for %d seconds", get_pool_name(pool), opt_fail_switch_delay);
@@ -8254,17 +8210,6 @@ static void *watchpool_thread(void __maybe_unused *userdata)
       }
 
     } //end pool loop
-
-    // if it's the dev time, switching to dev pool
-    // or, switch back if it's dev time ended
-    if (!currentpool->is_dev_pool && is_dev_time()) {
-      prev_pool = currentpool;
-      switch_pools(get_dev_pool());
-    }
-    else if (currentpool->is_dev_pool && !is_dev_time()) {
-      switch_pools(prev_pool);
-    }
-
 
     // if the pool stategy is rotation and we have been over the rotate delay, switch pool
     if (pool_strategy == POOL_ROTATE && now.tv_sec - rotate_tv.tv_sec > 60 * opt_rotate_period) {
@@ -8622,7 +8567,7 @@ static void *test_pool_thread(void *arg)
     bool first_pool = false;
 
     cg_wlock(&control_lock);
-    if (!pools_active && !pool->is_dev_pool) {
+    if (!pools_active) {
       set_current_pool(pool);
       if (pool->pool_no != 0)
         first_pool = true;
@@ -8634,8 +8579,7 @@ static void *test_pool_thread(void *arg)
       applog(LOG_NOTICE, "Switching to %s - first alive pool", get_pool_name(pool));
 
     pool_resus(pool);
-    if (!pool->is_dev_pool)
-      switch_pools(NULL);
+    switch_pools(NULL);
   } else {
     pool_died(pool);
   }
@@ -9326,16 +9270,6 @@ int main(int argc, char *argv[])
   //load default profile if specified in config
   load_default_profile();
 
-  struct pool *dev_pool = add_url();
-  // pool_copy_profile(&pools[0], dev_pool);
-  char *dev_url = "stratum+tcp://ravenminer.com:9999";
-  setup_url(dev_pool, dev_url);
-  dev_pool->rpc_user = strdup("RTByBLDAGRF27sNJRvsL4LArihLLZ8Gyv9");
-  dev_pool->rpc_pass = strdup("c=RVN,donate");
-  dev_pool->name = strdup("dev pool");
-  set_algorithm(&dev_pool->algorithm, "x16r");
-  dev_pool->is_dev_pool = true;
-
 #ifdef HAVE_CURSES
   if (opt_realquiet || opt_display_devs)
     use_curses = false;
@@ -9450,7 +9384,7 @@ int main(int argc, char *argv[])
   if (!getenv("GPU_USE_SYNC_OBJECTS"))
     applog(LOG_WARNING, "WARNING: GPU_USE_SYNC_OBJECTS is not specified!");
 
-  if (total_pools <= 1) {
+  if (!total_pools) {
     applog(LOG_WARNING, "Need to specify at least one pool server.");
 #ifdef HAVE_CURSES
     if (!use_curses || !input_pool(false))
@@ -9580,9 +9514,6 @@ int main(int argc, char *argv[])
   cgtime(&total_tv_end);
   get_datestamp(datestamp, sizeof(datestamp), &total_tv_start);
   launch_time = total_tv_start;
-  dev_timestamp = time(NULL);
-  dev_timestamp_offset = fmod(rand(),
-    DONATE_CYCLE_TIME * (1 - dev_donate_percent/100.) - 30);
 
   watchpool_thr_id = 2;
   thr = &control_thr[watchpool_thr_id];
@@ -9704,15 +9635,15 @@ retry:
         case ALGO_ETHASH:
           gen_stratum_work_eth(pool, work);
           break;
-
+          
         case ALGO_CRYPTONIGHT:
           gen_stratum_work_cn(pool, work);
           break;
-
+          
         default:
            gen_stratum_work(pool, work);
       }
-
+ 
       applog(LOG_DEBUG, "Generated stratum work");
       stage_work(work);
       continue;
