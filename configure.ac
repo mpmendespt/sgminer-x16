@@ -1,4 +1,4 @@
-AC_INIT([avermore], [1.4.1], [], [avermore], [https://github.com/brian112358/avermore-miner])
+AC_INIT([sgminer-x16r], [1.4.1], [], [sgminer-x16r], [https://github.com/brian112358/avermore-miner])
 
 AC_PREREQ(2.59)
 AC_CANONICAL_SYSTEM
